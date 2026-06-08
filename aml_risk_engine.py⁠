@@ -1,0 +1,98 @@
+"""
+PROJECT: Automated AML Risk Scoring Engine
+PURPOSE: Analyze transaction attributes and assign a weighted risk score for compliance monitoring.
+AUTHOR: Bandini Raghav
+"""
+
+from datetime import datetime, timedelta
+
+class AMLRiskEngine:
+    def __init__(self, high_value_threshold_gbp=10000, max_allowed_velocity=3):
+        """
+        Initializes the AML compliance engine with customizable regulatory thresholds.
+        """
+        self.high_value_threshold = high_value_threshold_gbp
+        self.max_allowed_velocity = max_allowed_velocity
+        # List of high-risk jurisdictions or corridors flagged for deep compliance screening
+        self.high_risk_corridors = ['USD', 'EUR']  
+
+    def calculate_transaction_risk(self, txn_data, customer_history):
+        """
+        Evaluates a transaction across multiple risk vectors and outputs a normalized risk score (0 to 100).
+        """
+        risk_score = 0
+        flags_triggered = []
+
+        # Vector 1: High-Value Transaction Rule
+        if txn_data['amount_gbp'] >= self.high_value_threshold:
+            risk_score += 40
+            flags_triggered.append("HIGH_VALUE_THRESHOLD_EXCEEDED")
+        elif txn_data['amount_gbp'] >= (self.high_value_threshold * 0.8):
+            # Flags "structuring" behavior (just below the threshold)
+            risk_score += 25
+            flags_triggered.append("POTENTIAL_TRANSACTION_STRUCTURING")
+
+        # Vector 2: Customer Velocity Rule
+        recent_txns = [
+            t for t in customer_history 
+            if (datetime.strptime(txn_data['timestamp'], "%Y-%m-%d %H:%M:%S") - 
+                datetime.strptime(t['timestamp'], "%Y-%m-%d %H:%M:%S")) <= timedelta(hours=24)
+        ]
+        if len(recent_txns) >= self.max_allowed_velocity:
+            risk_score += 35
+            flags_triggered.append("EXCESSIVE_24HR_VELOCITY")
+
+        # Vector 3: Corridor & Currency Mismatch Analysis
+        if txn_data['target_currency'] in self.high_risk_corridors:
+            risk_score += 25
+            flags_triggered.append("HIGH_RISK_TARGET_JURISDICTION")
+
+        # Normalize score to a maximum cap of 100
+        final_score = min(risk_score, 100)
+        
+        # Determine compliance action tier
+        if final_score >= 70:
+            action_required = "IMMEDIATE_SAR_FILING_AND_FREEZE"
+        elif final_score >= 40:
+            action_required = "ENHANCED_DUE_DILIGENCE_REQUIRED"
+        else:
+            action_required = "PASS_AUTOMATED_CLEARANCE"
+
+        return {
+            "transaction_id": txn_data['transaction_id'],
+            "customer_id": txn_data['customer_id'],
+            "aml_risk_score": final_score,
+            "compliance_flags": flags_triggered,
+            "recommended_action": action_required,
+            "evaluation_timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        }
+
+# ==========================================
+# EXECUTABLE DEMONSTRATION (Mock Scenario)
+# ==========================================
+if __name__ == "__main__":
+    # Initialize engine
+    engine = AMLRiskEngine()
+
+    # Scenario: A mock transaction that triggers structural formatting and corridor warnings
+    mock_transaction = {
+        "transaction_id": "TXN-90811",
+        "customer_id": "CUST-4402",
+        "amount_gbp": 8500,  # Sits right under the £10k limit
+        "target_currency": "USD",
+        "timestamp": "2026-06-08 14:30:00"
+    }
+
+    # Historical entries for this customer within the last 24 hours
+    mock_customer_history = [
+        {"timestamp": "2026-06-08 09:15:00", "amount_gbp": 4000},
+        {"timestamp": "2026-06-08 11:00:00", "amount_gbp": 3500},
+        {"timestamp": "2026-06-08 13:45:00", "amount_gbp": 2000}
+    ]
+
+    # Run screening
+    assessment = engine.calculate_transaction_risk(mock_transaction, mock_customer_history)
+    
+    print("=== AML RISK ASSESSMENT REPORT ===")
+    for key, value in assessment.items():
+        print(f"{key.upper().replace('_', ' ')}: {value}")
